@@ -17,10 +17,11 @@ public class Run_MavenDeployScriptsGen
 		//Add in any group replacements you want to do in the pom file.
 		//Note - this applies across the board to everything, including dependencies.
 		Map<String, String> groupIdReplacements = new HashMap<>();
+		groupIdReplacements.put("uk.co.devworx", "repl.uk.co.devworx");
 
 		//Add in any groups you want to filter on. Leave empty if you want to match all
 		Set<String> groupFilters = new HashSet<>();
-		groupFilters.add("uk.co.devworx");
+		//groupFilters.add("uk.co.devworx");
 
 		//Add in any groups you want to filter on. Leave empty if you want to match all
 		Set<String> versionFilters = new HashSet<>();
@@ -41,13 +42,20 @@ public class Run_MavenDeployScriptsGen
 		//Specify the location of your maven settings file.
 		Path mavenSettingsFile = Paths.get(System.getenv("MAVEN_HOME"), "conf/settings.xml");
 
-		 final GenerateMavenDeployScripts gen = new GenerateMavenDeployScripts(jarRootScanDirectory,
-																			   osTarget,
-																			   scriptType,
-																			   groupIdReplacements,
-																			   versionFilters,
-																			   groupFilters);
-		gen.generateScript(targetGen, mavenSettingsFile);
+		//Specify the repository Id you would like to publish to
+		String repositoryId = "MyRepositoryId";
+
+		//Specify the url you would like to publish to
+		String repoUrl = "https://my.repo/example/maven2";
+
+		final GenerateMavenDeployScripts gen = new GenerateMavenDeployScripts(jarRootScanDirectory,
+																			  osTarget,
+																			  scriptType,
+																			  groupIdReplacements,
+																			  versionFilters,
+																			  groupFilters);
+
+		gen.generateScript(targetGen, mavenSettingsFile, repoUrl, repositoryId);
 
 	}
 

@@ -6,10 +6,11 @@ import org.apache.logging.log4j.Logger;
 import java.io.*;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -48,6 +49,26 @@ class ZipUtils
 		}
     }
 
+	public static Optional<byte[]> getPomFileDataFromJar(Path jarFile) throws IOException, URISyntaxException
+	{
+		Map<String, String> zip_properties = new HashMap<>();
+		zip_properties.put("create", "false");
+		URI zip_disk = new URI("jar:" + jarFile.toUri());
+
+		logger.info("Creating a zip file system for : " + zip_disk);
+
+		/* Create ZIP file System */
+		try (FileSystem zipfs = FileSystems.newFileSystem(zip_disk, zip_properties))
+		{
+			Path mavenPathInZip = zipfs.getPath("META-INF/maven");
+			Optional<Path> mavenPomOpt = Files.walk(mavenPathInZip).filter(p -> p.getFileName().toString().equals("pom.xml")).findAny();
+			if(mavenPomOpt.isPresent() == false) return Optional.empty();
+
+			Path mavenPom = mavenPomOpt.get();
+			return Optional.of(Files.readAllBytes(mavenPom));
+		}
+	}
+
     public static void removeMavenSubDirFromJar(Path jarFile) throws IOException, URISyntaxException
 	{
 		Map<String, String> zip_properties = new HashMap<>();
@@ -60,13 +81,42 @@ class ZipUtils
 		try (FileSystem zipfs = FileSystems.newFileSystem(zip_disk, zip_properties))
 		{
 			Path mavenPathInZip = zipfs.getPath("META-INF/maven");
-
-			logger.info("Resolving : " + mavenPathInZip);
-			logger.info("Deleting recursively : " + mavenPathInZip);
-			FileUtls.deleteDir(mavenPathInZip);
-
+			List<Path> allItemsToDelete = Files.list(mavenPathInZip).filter(p -> Files.isDirectory(p) || p.getFileName().equals("plugin.xml")).collect(Collectors.toList());
+			for(Path p : allItemsToDelete)
+			{
+				logger.info("Resolving : " + p);
+				logger.info("Deleting recursively : " + p);
+				FileUtls.deleteDir(p);
+			}
 		}
+	}
 
+	public static void replacePluginXMLInJar(Path jarFile, Map<String, String> groupIdReplacements) throws IOException, URISyntaxException
+	{
+		Map<String, String> zip_properties = new HashMap<>();
+		zip_properties.put("create", "false");
+		URI zip_disk = new URI("jar:" + jarFile.toUri());
+
+		logger.info("Creating a zip file system for : " + zip_disk);
+
+		/* Create ZIP file System */
+		try (FileSystem zipfs = FileSystems.newFileSystem(zip_disk, zip_properties))
+		{
+			Path pluginXmlFile = zipfs.getPath("META-INF/maven/plugin.xml");
+			if(Files.exists(pluginXmlFile) == false)
+			{
+				return;
+			}
+			String pomFileData = new String(Files.readAllBytes(pluginXmlFile));
+			Set<Map.Entry<String, String>> entries = groupIdReplacements.entrySet();
+			for (Map.Entry<String, String> e : entries)
+			{
+				pomFileData = pomFileData.replace(">" + e.getKey() + "<", ">" + e.getValue() + "<");
+			}
+
+			logger.info("Writing updated plugin.xml file : " + pluginXmlFile);
+			Files.write(pluginXmlFile, pomFileData.getBytes(StandardCharsets.UTF_8));
+		}
 	}
 
 
@@ -198,7 +248,6 @@ class ZipUtils
 		}
 	}
 
-	
 	private static class ZipEntryClosingInputStreamWrapper extends InputStream
 	{
 		private final Closeable zFile;

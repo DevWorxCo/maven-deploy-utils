@@ -2,22 +2,14 @@ package uk.co.devworx.maven.deploy;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.w3c.dom.Document;
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
 
-import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
-import javax.xml.xpath.XPathExpressionException;
-import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.text.DecimalFormat;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A class that will generate a command line set of scripts for a
@@ -59,26 +51,52 @@ public class GenerateMavenDeployScripts
             {
                 @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
                 {
-                    if (file.getFileName().toString().endsWith(".jar"))
+                    if (file.getFileName().toString().endsWith(".jar") == false && file.getFileName().toString().endsWith(".pom") == false )
                     {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    String immediateParentName = file.getParent().getFileName().toString();
+                    String grandParentName = file.getParent().getParent().getFileName().toString();
+
+                    String expectedPathPom = grandParentName + "-" + immediateParentName + ".pom";
+                    String expectedPathJar = grandParentName + "-" + immediateParentName + ".jar";
+
                         try
                         {
-                            PomFileExtract fileExtract = PomFileExtract.create(file);
-                            if(!versionFilters.isEmpty() && !versionFilters.contains(fileExtract.getVersionId()))
+                            PomFileExtract fileExtract = null;
+                            String realFileName = file.getFileName().toString();
+
+                            logger.info("||| " + expectedPathJar  + " vs. " + realFileName + " || " + expectedPathJar.equals(realFileName) );
+
+                            if(expectedPathJar.equals(realFileName))
                             {
-                                return FileVisitResult.CONTINUE;
+                                fileExtract = PomFileExtract.create(Optional.of(file), Optional.empty());
                             }
-                            if(!groupIdFilters.isEmpty() && !groupIdFilters.contains(fileExtract.getGroupId()))
+                            else if(expectedPathPom.equals(realFileName))
                             {
-                                return FileVisitResult.CONTINUE;
+                                fileExtract = PomFileExtract.create( Optional.empty(), Optional.of(file));
                             }
-                            allMatchingJarFiles.add(fileExtract);
+                            if(fileExtract != null)
+                            {
+                                if(!versionFilters.isEmpty() && !versionFilters.contains(fileExtract.getVersionId()))
+                                {
+                                    return FileVisitResult.CONTINUE;
+                                }
+                                if(!groupIdFilters.isEmpty() && !groupIdFilters.contains(fileExtract.getGroupId()))
+                                {
+                                    return FileVisitResult.CONTINUE;
+                                }
+
+                                logger.info("INCLUDED : " + file.toAbsolutePath());
+                                allMatchingJarFiles.add(fileExtract);
+                            }
                         }
                         catch (Exception e)
                         {
-                            logger.info("Skipping : " + file.toAbsolutePath() + " - got the message : " + e.getMessage());
+                            logger.info("SKIPPED : " + file.toAbsolutePath() + " - got the message : " + e.getMessage());
                         }
-                    }
+
                     return FileVisitResult.CONTINUE;
                 }
             });
@@ -95,7 +113,10 @@ public class GenerateMavenDeployScripts
         return Collections.unmodifiableList(allMatchingJarFiles);
     }
 
-    public void generateScript(final Path outputDir, final Path settingsXml)
+    public void generateScript(final Path outputDir,
+                               final Path settingsXml,
+                               final String url,
+                               final String repositoryId)
     {
         try
         {
@@ -118,7 +139,12 @@ public class GenerateMavenDeployScripts
 
         for(PomFileExtract extract : pomFileExtracts)
         {
-            generateScriptForPomFileExtract(extract, outputScript, outputDir, settingsXml);
+            generateScriptForPomFileExtract(extract,
+                                            outputScript,
+                                            outputDir,
+                                            settingsXml,
+                                            url,
+                                            repositoryId);
         }
 
         try
@@ -143,20 +169,45 @@ public class GenerateMavenDeployScripts
     private void generateScriptForPomFileExtract(final PomFileExtract extract,
                                                  final StringBuilder outputScript,
                                                  final Path outputDir,
-                                                 final Path settingsXml)
+                                                 final Path settingsXml,
+                                                 final String url,
+                                                 final String repositoryId)
+    {
+        switch(extract.getPomFileExtractType())
+        {
+
+        case PARENT_POM:
+            generateScriptForPomFileExtract_parentPom(extract,outputScript,outputDir,settingsXml,url,repositoryId);
+            return;
+        case JAR_FILE:
+            generateScriptForPomFileExtract_jar(extract,outputScript,outputDir,settingsXml,url,repositoryId);
+            return;
+        default:
+            throw new IllegalStateException("Unexpected value: " + extract.getPomFileExtractType() + " - you have not coded for this value.");
+        }
+    }
+
+    private void generateScriptForPomFileExtract_jar(final PomFileExtract extract,
+                                                     final StringBuilder outputScript,
+                                                     final Path outputDir,
+                                                     final Path settingsXml,
+                                                     final String url,
+                                                     final String repositoryId)
     {
         try
         {
             final String idPrefix = fileNameFormatter.format(extract.getInstanceId());
-           //Generate the mavenless jar & extract the pom.
-            final Path jarFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().getFileName());
-            final Path pomFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().getFileName() + ".pom.xml");
+            //Generate the mavenless jar & extract the pom.
 
-            logger.info("Copying from " + extract.getJarFile().toAbsolutePath() + " to " + jarFile.toAbsolutePath());
+            final Path jarFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().get().getFileName());
+            final Path pomFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().get().getFileName() + ".pom.xml");
 
-            Files.copy(extract.getJarFile(), jarFile, StandardCopyOption.REPLACE_EXISTING);
+            logger.info("Copying from " + extract.getJarFile().get().toAbsolutePath() + " to " + jarFile.toAbsolutePath());
+
+            Files.copy(extract.getJarFile().get(), jarFile, StandardCopyOption.REPLACE_EXISTING);
 
             ZipUtils.removeMavenSubDirFromJar(jarFile);
+            ZipUtils.replacePluginXMLInJar(jarFile, groupIdReplacements);
 
             String pomFileData = new String(extract.getPomFileData());
             Set<Map.Entry<String, String>> entries = groupIdReplacements.entrySet();
@@ -168,154 +219,64 @@ public class GenerateMavenDeployScripts
             Files.write(pomFile, pomFileData.getBytes(StandardCharsets.UTF_8));
 
             outputScript.append("\n");
-            outputScript.append(osTarget.getPrefix() + "mvn " + scriptType.getMavenTarget() + " -Dfile=\"" + jarFile.toAbsolutePath() + "\" -DpomFile=\"" + pomFile.toAbsolutePath() + "\" -s " + settingsXml.toAbsolutePath());
-            outputScript.append("\n");
+            outputScript.append(osTarget.getPrefix() + "mvn " + scriptType.getMavenTarget() +
+                                        " -Durl=\"" + url + "\"" +
+                                        " -DrepositoryId=\"" + repositoryId + "\"" +
+                                        " -Dfile=\"" + jarFile.toAbsolutePath() + "\"" +
+                                        " -DpomFile=\"" + pomFile.toAbsolutePath() + "\"" +
+                                        " -s \"" + settingsXml.toAbsolutePath() + "\"");
 
+            outputScript.append("\n");
         }
         catch(Exception e)
         {
             String msg = "Unable to create a set of scripts for the POM File extract: \n" + extract + "\n" +
-                         "Exception was : " + e;
+                    "Exception was : " + e;
 
             throw new RuntimeException(msg, e);
         }
     }
 
+    private void generateScriptForPomFileExtract_parentPom(final PomFileExtract extract,
+                                                           final StringBuilder outputScript,
+                                                           final Path outputDir,
+                                                           final Path settingsXml,
+                                                           final String url,
+                                                           final String repositoryId)
+    {
+        try
+        {
+            final String idPrefix = fileNameFormatter.format(extract.getInstanceId());
+            final Path pomFile = outputDir.resolve(idPrefix + "-" + extract.getPomFile().get().getFileName());
+
+            String pomFileDataRepl = new String(extract.getPomFileData());
+            Set<Map.Entry<String, String>> entries = groupIdReplacements.entrySet();
+            for (Map.Entry<String, String> e : entries)
+            {
+                pomFileDataRepl = pomFileDataRepl.replace(">" + e.getKey() + "<", ">" + e.getValue() + "<");
+            }
+
+            Files.write(pomFile, pomFileDataRepl.getBytes(StandardCharsets.UTF_8));
+
+            outputScript.append("\n");
+            outputScript.append(osTarget.getPrefix() + "mvn " + scriptType.getMavenTarget() +
+                                        " -Durl=\"" + url + "\"" +
+                                        " -DrepositoryId=\"" + repositoryId + "\"" +
+                                        " -Dfile=\"" + pomFile.toAbsolutePath() + "\"" +
+                                        " -DpomFile=\"" + pomFile.toAbsolutePath() + "\"" +
+                                        " -s \"" + settingsXml.toAbsolutePath() + "\"");
+            outputScript.append("\n");
+        }
+        catch(Exception e)
+        {
+            String msg = "Unable to create a set of scripts for the POM File extract: \n" + extract + "\n" +
+                    "Exception was : " + e;
+
+            throw new RuntimeException(msg, e);
+        }
+    }
+
+
 }
 
-
-class PomFileExtract
-{
-    private static final Logger logger = LogManager.getLogger(PomFileExtract.class);
-
-    private static final AtomicInteger counter = new AtomicInteger();
-
-    private final int instanceId;
-    private final Path jarFile;
-    private final String groupId;
-    private final String artefactId;
-    private final String versionId;
-
-    private final byte[] pomFileData;
-
-    @Override public String toString()
-    {
-        return "PomFileExtract{" + "jarFile=" + jarFile + ", groupId='" + groupId + '\'' + ", artefactId='" + artefactId + '\'' + ", versionId='" + versionId + '\'' + '}';
-    }
-
-    public static PomFileExtract create(Path jarFilePath)
-    {
-        if(Files.exists(jarFilePath) == false || Files.isRegularFile(jarFilePath) == false || Files.isReadable(jarFilePath) == false)
-        {
-            throw new RuntimeException("Unable to read the file : " + jarFilePath);
-        }
-
-        Path tmpDir = null;
-        try(InputStream ins = Files.newInputStream(jarFilePath))
-        {
-            String tmpDirStr = System.getProperty("java.io.tmpdir");
-            tmpDir = Paths.get(tmpDirStr, GenerateMavenDeployScripts.class.getSimpleName(),
-                                          jarFilePath.getFileName().toString() + "-extract");
-
-            if(Files.exists(tmpDir) == true)
-            {
-                logger.info("Deleting the previous temp directory : " + tmpDir);
-                FileUtls.deleteDir(tmpDir);
-            }
-            logger.info("Creating the temp directory : " + tmpDir);
-
-            Files.createDirectories(tmpDir);
-
-            logger.info("Extracting " + jarFilePath + " to the temp directory : " + tmpDir);
-
-            ZipUtils.extractZip(ins, tmpDir);
-
-            Path mavenDir = tmpDir.resolve("META-INF/maven");
-            if(Files.exists(mavenDir) == false)
-            {
-                throw new RuntimeException("The file you have specified - " + jarFilePath + " - does not have a META-INF/maven directory - hence is not a valid Maven file.");
-            }
-
-            Optional<Path> pomFileOpt = PomFileUtils.findEmbeddedPomFile(mavenDir);
-            Path pomFile = pomFileOpt.orElseThrow(() -> new RuntimeException("Unable to locate the maven pom file from the specified JAR file : " + jarFilePath.toAbsolutePath()));
-
-            try(BufferedReader pomFileReader = Files.newBufferedReader(pomFile))
-            {
-                Document document = PomFileUtils.docBuilder.parse(new InputSource(pomFileReader));
-                XPath xpath = PomFileUtils.xPathFactory.newXPath();
-
-                final String version = (String) xpath.compile("/project/version").evaluate(document, XPathConstants.STRING);
-                final String groupId = (String) xpath.compile("/project/groupId").evaluate(document, XPathConstants.STRING);
-                final String artefactId = (String) xpath.compile("/project/artifactId").evaluate(document, XPathConstants.STRING);
-
-                return new PomFileExtract(jarFilePath, groupId, artefactId,version, Files.readAllBytes(pomFile));
-            }
-            catch(SAXException | XPathExpressionException e )
-            {
-                throw new RuntimeException("Unable to parse the POM XML file : " + pomFile  + " - got the exception : " + e, e);
-            }
-
-        }
-        catch(IOException e)
-        {
-            throw new RuntimeException("Unable to read the source file : " + jarFilePath + " - got the exception : " + e);
-        }
-        finally
-        {
-            if(Files.exists(tmpDir) == true)
-            {
-                try
-                {
-                    FileUtls.deleteDir(tmpDir);
-                }
-                catch (IOException e)
-                {
-                    logger.warn("Unable to delete the temp directory : " + tmpDir + " | got the exception : " + e);
-                }
-            }
-        }
-
-    }
-
-
-    private PomFileExtract(Path jarFile, String groupId, String artefactId, String versionId,  final byte[] pomFileData)
-    {
-        this.jarFile = jarFile;
-        this.groupId = groupId;
-        this.artefactId = artefactId;
-        this.versionId = versionId;
-        this.instanceId = counter.incrementAndGet();
-        this.pomFileData = pomFileData;
-    }
-
-    public Path getJarFile()
-    {
-        return jarFile;
-    }
-
-    public int getInstanceId()
-    {
-        return instanceId;
-    }
-
-    public String getGroupId()
-    {
-        return groupId;
-    }
-
-    public String getArtefactId()
-    {
-        return artefactId;
-    }
-
-    public String getVersionId()
-    {
-        return versionId;
-    }
-
-    public byte[] getPomFileData()
-    {
-        return pomFileData;
-    }
-}
 

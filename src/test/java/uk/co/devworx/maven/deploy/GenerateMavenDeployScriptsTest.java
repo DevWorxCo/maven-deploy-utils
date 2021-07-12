@@ -40,7 +40,10 @@ public class GenerateMavenDeployScriptsTest
 		Files.createDirectories(outputPath);
 		Path settings = outputPath.resolve("settings.xml");
 
-		gen.generateScript(outputPath, settings);
+		String repositoryId = "MyRepositoryId";
+		String repoUrl = "https://my.repo/example/maven2";
+
+		gen.generateScript(outputPath, settings, repoUrl, repositoryId);
 
 		Assertions.assertEquals(true, Files.exists(outputPath.resolve("000-execute-maven-script" + OSTarget.Windows.getFileExtension())));
 	}
