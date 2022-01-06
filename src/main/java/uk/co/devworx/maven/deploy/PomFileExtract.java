@@ -16,7 +16,6 @@ import java.io.StringReader;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,7 +29,7 @@ public class PomFileExtract
 	private static final AtomicInteger counter = new AtomicInteger();
 
 	private final int instanceId;
-	private final Optional<Path> jarFile;
+	private final Optional<Path> jarOrWarFile;
 	private final Optional<Path> pomFile;
 	private final String groupId;
 	private final String artefactId;
@@ -42,39 +41,38 @@ public class PomFileExtract
 
 	@Override public String toString()
 	{
-		return "PomFileExtract{" + "jarFile=" + jarFile + ", groupId='" + groupId + '\'' + ", artefactId='" + artefactId + '\'' + ", versionId='" + versionId + '\'' + '}';
+		return "PomFileExtract{" + "jarFile=" + jarOrWarFile + ", groupId='" + groupId + '\'' + ", artefactId='" + artefactId + '\'' + ", versionId='" + versionId + '\'' + '}';
 	}
 
-	public static PomFileExtract create(Optional<Path> jarFilePathOpt, Optional<Path> pomFileOpt)
+	public static PomFileExtract create(Optional<Path> jarWarFilePathOpt, Optional<Path> pomFileOpt)
 	{
-		if (jarFilePathOpt.isPresent() == true && pomFileOpt.isPresent() == true)
+		if (jarWarFilePathOpt.isPresent() == true && pomFileOpt.isPresent() == true)
 		{
-			throw new RuntimeException("You cannot specify both a jar File and parent pom file.");
+			throw new RuntimeException("You cannot specify both a jar/war File and parent pom file.");
 		}
-		if (jarFilePathOpt.isPresent() == false && pomFileOpt.isPresent() == false)
+		if (jarWarFilePathOpt.isPresent() == false && pomFileOpt.isPresent() == false)
 		{
-			throw new RuntimeException("You must specify either jar File and parent pom file.");
+			throw new RuntimeException("You must specify either jar/war File and parent pom file.");
 		}
 
-		if (jarFilePathOpt.isPresent())
-			return create_fromJar(jarFilePathOpt.get());
+		if (jarWarFilePathOpt.isPresent())
+			return create_fromJarWar(jarWarFilePathOpt.get());
 		else
 			return create_fromPom(pomFileOpt.get());
 
 	}
 
-	private static PomFileExtract create_fromJar(Path jarFilePath)
+	private static PomFileExtract create_fromJarWar(Path jarWarFilePath)
 	{
-		if (Files.exists(jarFilePath) == false || Files.isRegularFile(jarFilePath) == false || Files.isReadable(jarFilePath) == false)
+		if (Files.exists(jarWarFilePath) == false || Files.isRegularFile(jarWarFilePath) == false || Files.isReadable(jarWarFilePath) == false)
 		{
-			throw new RuntimeException("Unable to read the file : " + jarFilePath);
+			throw new RuntimeException("Unable to read the file : " + jarWarFilePath);
 		}
-
 
 		try
 		{
-			Optional<byte[]> dataOpt = ZipUtils.getPomFileDataFromJar(jarFilePath);
-			byte[] data = dataOpt.orElseThrow(() -> new RuntimeException("Could not extract a pom.xml file from the META-INF directory in the file : " + jarFilePath));
+			Optional<byte[]> dataOpt = ZipUtils.getPomFileDataFromJar(jarWarFilePath);
+			byte[] data = dataOpt.orElseThrow(() -> new RuntimeException("Could not extract a pom.xml file from the META-INF directory in the file : " + jarWarFilePath));
 
 			try (BufferedReader pomFileReader = new BufferedReader(new StringReader(new String(data))))
 			{
@@ -84,12 +82,12 @@ public class PomFileExtract
 				final String version = (String) xpath.compile("/project/version").evaluate(document, XPathConstants.STRING);
 				final String groupId = (String) xpath.compile("/project/groupId").evaluate(document, XPathConstants.STRING);
 				final String artefactId = (String) xpath.compile("/project/artifactId").evaluate(document, XPathConstants.STRING);
-				return new PomFileExtract(Optional.of(jarFilePath), Optional.empty(), groupId, artefactId, version, data);
+				return new PomFileExtract(Optional.of(jarWarFilePath), Optional.empty(), groupId, artefactId, version, data);
 			}
 		}
 		catch (IOException | URISyntaxException | SAXException | XPathExpressionException e)
 		{
-			throw new RuntimeException("Unable to read the source file : " + jarFilePath + " - got the exception : " + e, e);
+			throw new RuntimeException("Unable to read the source file : " + jarWarFilePath + " - got the exception : " + e, e);
 		}
 	}
 
@@ -131,9 +129,9 @@ public class PomFileExtract
         }
     }
 
-	private PomFileExtract(Optional<Path> jarFile, Optional<Path> pomFile, String groupId, String artefactId, String versionId, final byte[] pomFileData)
+	private PomFileExtract(Optional<Path> jarOrWarFile, Optional<Path> pomFile, String groupId, String artefactId, String versionId, final byte[] pomFileData)
 	{
-		this.jarFile = jarFile;
+		this.jarOrWarFile = jarOrWarFile;
 		this.pomFile = pomFile;
 		this.groupId = groupId;
 		this.artefactId = artefactId;
@@ -141,17 +139,17 @@ public class PomFileExtract
 		this.instanceId = counter.incrementAndGet();
 		this.pomFileData = pomFileData;
 
-		if(jarFile.isPresent() && pomFile.isPresent() == false)
+		if(jarOrWarFile.isPresent() && pomFile.isPresent() == false)
         {
             pomFileExtractType = PomFileExtractType.JAR_FILE;
         }
-		else if(jarFile.isPresent() == false && pomFile.isPresent())
+		else if(jarOrWarFile.isPresent() == false && pomFile.isPresent())
         {
             pomFileExtractType = PomFileExtractType.PARENT_POM;
         }
 		else
         {
-            throw new RuntimeException("You cannot specify both a JAR File and POM File argument to this constructor. You specified : " + jarFile + " | " + pomFile);
+            throw new RuntimeException("You cannot specify both a JAR File and POM File argument to this constructor. You specified : " + jarOrWarFile + " | " + pomFile);
         }
 
 	}
@@ -161,9 +159,9 @@ public class PomFileExtract
         return pomFile;
     }
 
-    public Optional<Path> getJarFile()
+    public Optional<Path> getJarOrWarFile()
 	{
-		return jarFile;
+		return jarOrWarFile;
 	}
 
     public PomFileExtractType getPomFileExtractType()

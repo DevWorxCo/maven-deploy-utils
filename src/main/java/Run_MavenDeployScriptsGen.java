@@ -28,7 +28,7 @@ public class Run_MavenDeployScriptsGen
 		//versionFilters.add("1.0.1");
 
 		//Specify the Path you want to scan over.
-		Path jarRootScanDirectory = Paths.get("src/test/resources/mock-jars");
+		Path jarRootScanDirectory = Paths.get("src/test/resources/mock");
 
 		//Specify the format of the script to generate for
 		OSTarget osTarget = OSTarget.Windows;

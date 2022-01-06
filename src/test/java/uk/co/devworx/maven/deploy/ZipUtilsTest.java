@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 public class ZipUtilsTest
 {
 
-	public static final String JAR_LOCATION = "src/test/resources/mock-jars/uk/co/devworx/impala-query-parser/1.0-SNAPSHOT/impala-query-parser-1.0-SNAPSHOT.jar";
+	public static final String JAR_LOCATION = "src/test/resources/mock/mock-jars/uk/co/devworx/impala-query-parser/1.0-SNAPSHOT/impala-query-parser-1.0-SNAPSHOT.jar";
 
 	@Test
 	public void testRemoveMavenFromJar() throws Exception

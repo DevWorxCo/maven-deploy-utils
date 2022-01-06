@@ -23,7 +23,7 @@ public class GenerateMavenDeployScriptsTest
 		groupFilters.add("uk.co.devworx");
 	}
 
-	private final Path jarRootScanDirectory = Paths.get("src/test/resources/mock-jars");
+	private final Path jarRootScanDirectory = Paths.get("src/test/resources/mock");
 
 	private final GenerateMavenDeployScripts gen = new GenerateMavenDeployScripts(jarRootScanDirectory,
 																	OSTarget.Windows,

@@ -3,7 +3,6 @@ package uk.co.devworx.maven.deploy;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -13,28 +12,28 @@ import java.util.*;
 
 /**
  * A class that will generate a command line set of scripts for a
- * set of JAR files for Maven (with optional group id replacements)
+ * set of JAR/WAR files for Maven (with optional group id replacements)
  *
  */
 public class GenerateMavenDeployScripts
 {
     private static final Logger logger = LogManager.getLogger(GenerateMavenDeployScripts.class);
 
-    private final Path jarRootScanDirectory;
+    private final Path jarWarRootScanDirectory;
     private final OSTarget osTarget;
     private final ScriptType scriptType;
     private final Map<String, String> groupIdReplacements;
     private final Set<String> versionFilters;
     private final Set<String> groupIdFilters;
 
-    public GenerateMavenDeployScripts(Path jarRootScanDirectory,
+    public GenerateMavenDeployScripts(Path jarWarRootScanDirectory,
                                       OSTarget osTarget,
                                       ScriptType scriptType,
                                       Map<String, String> groupIdReplacements,
                                       Set<String> versionFilters,
                                       Set<String> groupIdFilters)
     {
-        this.jarRootScanDirectory = jarRootScanDirectory;
+        this.jarWarRootScanDirectory = jarWarRootScanDirectory;
         this.osTarget = osTarget;
         this.scriptType = scriptType;
         this.groupIdReplacements = groupIdReplacements;
@@ -44,14 +43,16 @@ public class GenerateMavenDeployScripts
 
     public List<PomFileExtract> getPomFileExtracts()
     {
-        final List<PomFileExtract> allMatchingJarFiles = new ArrayList<>();
+        final List<PomFileExtract> allMatchingJarWarFiles = new ArrayList<>();
         try
         {
-            Files.walkFileTree(jarRootScanDirectory, new SimpleFileVisitor<Path>()
+            Files.walkFileTree(jarWarRootScanDirectory, new SimpleFileVisitor<Path>()
             {
                 @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
                 {
-                    if (file.getFileName().toString().endsWith(".jar") == false && file.getFileName().toString().endsWith(".pom") == false )
+                    if (file.getFileName().toString().endsWith(".jar") == false &&
+                        file.getFileName().toString().endsWith(".war") == false &&
+                        file.getFileName().toString().endsWith(".pom") == false )
                     {
                         return FileVisitResult.CONTINUE;
                     }
@@ -61,15 +62,20 @@ public class GenerateMavenDeployScripts
 
                     String expectedPathPom = grandParentName + "-" + immediateParentName + ".pom";
                     String expectedPathJar = grandParentName + "-" + immediateParentName + ".jar";
+                    String expectedPathWar = grandParentName + "-" + immediateParentName + ".war";
 
                         try
                         {
                             PomFileExtract fileExtract = null;
                             String realFileName = file.getFileName().toString();
 
-                            logger.info("||| " + expectedPathJar  + " vs. " + realFileName + " || " + expectedPathJar.equals(realFileName) );
+                            logger.info("||| " + expectedPathJar  + " vs. " + expectedPathWar + " vs. " + realFileName + " || " + expectedPathJar.equals(realFileName) );
 
                             if(expectedPathJar.equals(realFileName))
+                            {
+                                fileExtract = PomFileExtract.create(Optional.of(file), Optional.empty());
+                            }
+                            if(expectedPathWar.equals(realFileName))
                             {
                                 fileExtract = PomFileExtract.create(Optional.of(file), Optional.empty());
                             }
@@ -77,6 +83,7 @@ public class GenerateMavenDeployScripts
                             {
                                 fileExtract = PomFileExtract.create( Optional.empty(), Optional.of(file));
                             }
+
                             if(fileExtract != null)
                             {
                                 if(!versionFilters.isEmpty() && !versionFilters.contains(fileExtract.getVersionId()))
@@ -89,7 +96,7 @@ public class GenerateMavenDeployScripts
                                 }
 
                                 logger.info("INCLUDED : " + file.toAbsolutePath());
-                                allMatchingJarFiles.add(fileExtract);
+                                allMatchingJarWarFiles.add(fileExtract);
                             }
                         }
                         catch (Exception e)
@@ -101,7 +108,7 @@ public class GenerateMavenDeployScripts
                 }
             });
 
-            logger.info("allMatchingJarFiles - total of " + allMatchingJarFiles.size() + " found.");
+            logger.info("allMatchingJarWarFiles - total of " + allMatchingJarWarFiles.size() + " found.");
 
         }
         catch(Exception e)
@@ -110,7 +117,7 @@ public class GenerateMavenDeployScripts
             throw new RuntimeException(msg, e);
         }
 
-        return Collections.unmodifiableList(allMatchingJarFiles);
+        return Collections.unmodifiableList(allMatchingJarWarFiles);
     }
 
     public void generateScript(final Path outputDir,
@@ -199,12 +206,12 @@ public class GenerateMavenDeployScripts
             final String idPrefix = fileNameFormatter.format(extract.getInstanceId());
             //Generate the mavenless jar & extract the pom.
 
-            final Path jarFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().get().getFileName());
-            final Path pomFile = outputDir.resolve(idPrefix + "-" + extract.getJarFile().get().getFileName() + ".pom.xml");
+            final Path jarFile = outputDir.resolve(idPrefix + "-" + extract.getJarOrWarFile().get().getFileName());
+            final Path pomFile = outputDir.resolve(idPrefix + "-" + extract.getJarOrWarFile().get().getFileName() + ".pom.xml");
 
-            logger.info("Copying from " + extract.getJarFile().get().toAbsolutePath() + " to " + jarFile.toAbsolutePath());
+            logger.info("Copying from " + extract.getJarOrWarFile().get().toAbsolutePath() + " to " + jarFile.toAbsolutePath());
 
-            Files.copy(extract.getJarFile().get(), jarFile, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(extract.getJarOrWarFile().get(), jarFile, StandardCopyOption.REPLACE_EXISTING);
 
             ZipUtils.removeMavenSubDirFromJar(jarFile);
             ZipUtils.replacePluginXMLInJar(jarFile, groupIdReplacements);
