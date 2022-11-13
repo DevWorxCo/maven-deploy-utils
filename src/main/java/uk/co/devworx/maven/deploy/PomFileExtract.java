@@ -16,6 +16,7 @@ import java.io.StringReader;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,6 +31,8 @@ public class PomFileExtract
 
 	private final int instanceId;
 	private final Optional<Path> jarOrWarFile;
+
+	private final Optional<Path> sourceJarFile;
 	private final Optional<Path> pomFile;
 	private final String groupId;
 	private final String artefactId;
@@ -44,7 +47,8 @@ public class PomFileExtract
 		return "PomFileExtract{" + "jarFile=" + jarOrWarFile + ", groupId='" + groupId + '\'' + ", artefactId='" + artefactId + '\'' + ", versionId='" + versionId + '\'' + '}';
 	}
 
-	public static PomFileExtract create(Optional<Path> jarWarFilePathOpt, Optional<Path> pomFileOpt)
+	public static PomFileExtract create(Optional<Path> jarWarFilePathOpt,
+										Optional<Path> pomFileOpt)
 	{
 		if (jarWarFilePathOpt.isPresent() == true && pomFileOpt.isPresent() == true)
 		{
@@ -56,10 +60,19 @@ public class PomFileExtract
 		}
 
 		if (jarWarFilePathOpt.isPresent())
+		{
 			return create_fromJarWar(jarWarFilePathOpt.get());
+		}
 		else
+		{
 			return create_fromPom(pomFileOpt.get());
+		}
 
+	}
+
+	public Optional<Path> getSourceJarFile()
+	{
+		return sourceJarFile;
 	}
 
 	private static PomFileExtract create_fromJarWar(Path jarWarFilePath)
@@ -82,7 +95,23 @@ public class PomFileExtract
 				final String version = (String) xpath.compile("/project/version").evaluate(document, XPathConstants.STRING);
 				final String groupId = (String) xpath.compile("/project/groupId").evaluate(document, XPathConstants.STRING);
 				final String artefactId = (String) xpath.compile("/project/artifactId").evaluate(document, XPathConstants.STRING);
-				return new PomFileExtract(Optional.of(jarWarFilePath), Optional.empty(), groupId, artefactId, version, data);
+
+				//Found out the source jar
+				final Optional<Path> sourceJar;
+				String sourceJarName = jarWarFilePath.getFileName().toString();
+				sourceJarName = sourceJarName.substring(0, sourceJarName.length() - 4);
+				sourceJarName = sourceJarName + "-sources.jar";
+				Path candidateSourceFile = jarWarFilePath.getParent().resolve(sourceJarName);
+				if(Files.exists(candidateSourceFile))
+				{
+					sourceJar = Optional.of(candidateSourceFile);
+				}
+				else
+				{
+					sourceJar = Optional.empty();
+				}
+
+				return new PomFileExtract(Optional.of(jarWarFilePath), Optional.empty(), sourceJar, groupId, artefactId, version, data);
 			}
 		}
 		catch (IOException | URISyntaxException | SAXException | XPathExpressionException e)
@@ -116,6 +145,7 @@ public class PomFileExtract
 
             return new PomFileExtract(Optional.empty(),
                                       Optional.of(pomFilePath),
+									  Optional.empty(),
                                       groupId, artefactId, version,
                                       Files.readAllBytes(pomFilePath));
         }
@@ -129,13 +159,20 @@ public class PomFileExtract
         }
     }
 
-	private PomFileExtract(Optional<Path> jarOrWarFile, Optional<Path> pomFile, String groupId, String artefactId, String versionId, final byte[] pomFileData)
+	private PomFileExtract(Optional<Path> jarOrWarFile,
+						   Optional<Path> pomFile,
+						   Optional<Path> sourceJarFile,
+						   String groupId,
+						   String artefactId,
+						   String versionId,
+						   final byte[] pomFileData)
 	{
 		this.jarOrWarFile = jarOrWarFile;
 		this.pomFile = pomFile;
 		this.groupId = groupId;
 		this.artefactId = artefactId;
 		this.versionId = versionId;
+		this.sourceJarFile = sourceJarFile;
 		this.instanceId = counter.incrementAndGet();
 		this.pomFileData = pomFileData;
 

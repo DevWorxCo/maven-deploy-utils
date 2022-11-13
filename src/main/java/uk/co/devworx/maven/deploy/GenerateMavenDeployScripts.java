@@ -213,6 +213,14 @@ public class GenerateMavenDeployScripts
 
             Files.copy(extract.getJarOrWarFile().get(), jarFile, StandardCopyOption.REPLACE_EXISTING);
 
+            Path sourceJarFile = null;
+            if(extract.getSourceJarFile().isPresent())
+            {
+                sourceJarFile = outputDir.resolve(idPrefix + "-" + extract.getSourceJarFile().get().getFileName());
+                logger.info("Copying Source Jar " + extract.getSourceJarFile().get().toAbsolutePath() + " to " + sourceJarFile.toAbsolutePath());
+                Files.copy(extract.getSourceJarFile().get(), sourceJarFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+
             ZipUtils.removeMavenSubDirFromJar(jarFile);
             ZipUtils.replacePluginXMLInJar(jarFile, groupIdReplacements);
 
@@ -226,10 +234,14 @@ public class GenerateMavenDeployScripts
             Files.write(pomFile, pomFileData.getBytes(StandardCharsets.UTF_8));
 
             outputScript.append("\n");
+
+            String srcJarPortion = sourceJarFile == null ? "" : " -Dsources=\"" + sourceJarFile.toAbsolutePath() + "\"";
+
             outputScript.append(osTarget.getPrefix() + "mvn " + scriptType.getMavenTarget() +
                                         " -Durl=\"" + url + "\"" +
                                         " -DrepositoryId=\"" + repositoryId + "\"" +
                                         " -Dfile=\"" + jarFile.toAbsolutePath() + "\"" +
+                                        srcJarPortion +
                                         " -DpomFile=\"" + pomFile.toAbsolutePath() + "\"" +
                                         " -s \"" + settingsXml.toAbsolutePath() + "\"");
 
